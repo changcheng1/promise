@@ -4,20 +4,20 @@
 // 3) 默认promise有三个状态 pedding,resolve,reject
 // 4) 如果一旦成功 不能变成失败，一但失败，不能变成成功
 // 5) 每个Promise都有一个then方法
-let Promise = require('./simplePromise.js')
-let P = new Promise((resolve,reject)=>{
-    setTimeout(()=>{
+let Promise = require('./simplePromise')
+let P = new Promise((resolve, reject) => {
+    setTimeout(() => {
         reject("错误了")
-    },1000)
-})  
-P.then(data=>{
-    console.log("data:",data)
-},err=>{
-    console.log("err:",err)
+    }, 1000)
+})
+P.then(data => {
+    console.log("data:", data)
+}, err => {
+    console.log("err:", err)
 })
 
-P.then(data=>{
-    console.log("data:",data)
-},err=>{
-    console.log("err:",err)
+P.then(data => {
+    console.log("data:", data)
+}, err => {
+    console.log("err:", err)
 })
