@@ -1,3 +1,11 @@
+/*
+ * @Author: your name
+ * @Date: 2020-03-19 22:30:11
+ * @LastEditTime: 2020-03-22 16:27:32
+ * @LastEditors: Please set LastEditors
+ * @Description: In User Settings Edit
+ * @FilePath: /webNotes/Users/changcheng/Downloads/promise/index1.js
+ */
 // Promise是一个类
 // 1) 每次执行Promise都需要传递一个执行器，执行器是立即执行的
 // 2) 执行器中有两个参数，resolve,reject
@@ -7,11 +15,10 @@
 let Promise = require('./simplePromise')
 let P = new Promise((resolve, reject) => {
     setTimeout(() => {
-        reject("错误了")
-    }, 3000)
+        reject('6666')
+    }, 1500)
 })
-P.then(data => {
-    console.log("data:", data)
-}, err => {
-    console.log("err:", err)
+
+P.catch(err => {
+    console.log(err)
 })
