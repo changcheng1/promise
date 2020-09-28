@@ -1,1 +1,1 @@
-### promise detail
+### Promise
