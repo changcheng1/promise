@@ -27,7 +27,7 @@ const resolvePromise = (promise2, x, resolve, reject) => {
             }, r => {
                 if (called) return; // 防止多次调用
                 called = true
-                reject(rs)
+                reject(r)
             })
         } catch (e) {
             if (called) return; // 防止多次调用
