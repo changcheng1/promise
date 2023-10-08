@@ -83,7 +83,7 @@ class Promise {
                     try {
                         let x = onRejected(this.value)
                         resolvePromise(promise2, x, resolve, reject)
-                        resplve(x)
+                        resolve(x)
                     } catch (e) {
                         reject(e)
                     }
@@ -93,7 +93,7 @@ class Promise {
             if (this.status == FULFILLED) {
                 try {
                     let x = onFulfilled(this.reson)
-                    resplve(x)
+                    resolve(x)
                 } catch (e) {
                     reject(e)
                 }
