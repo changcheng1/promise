@@ -28,12 +28,12 @@
 
 ## ✨ 核心特性
 
-- ✅ **状态管理**: 实现 pending、fulfilled、rejected 三种状态
-- ✅ **异步处理**: 使用订阅发布模式处理异步操作
-- ✅ **链式调用**: 支持 `.then()` 方法的链式调用
-- ✅ **错误处理**: 实现 `.catch()` 方法和错误传播
-- ✅ **Promise 解析**: 处理返回值为 Promise 的情况
-- ✅ **循环引用检测**: 防止 Promise 自引用导致的死循环
+-  **状态管理**: 实现 pending、fulfilled、rejected 三种状态
+-  **异步处理**: 使用订阅发布模式处理异步操作
+-  **链式调用**: 支持 `.then()` 方法的链式调用
+-  **错误处理**: 实现 `.catch()` 方法和错误传播
+-  **Promise 解析**: 处理返回值为 Promise 的情况
+-  **循环引用检测**: 防止 Promise 自引用导致的死循环
 
 ## 📁 文件结构
 
@@ -576,7 +576,7 @@ Promise.any([fetchFromCDN1(), fetchFromCDN2(), fetchFromCDN3()])
 
 ## 📖 核心代码实现详解
 
-### 1. 状态常量定义 ✅
+### 1. 状态常量定义 
 
 ```javascript
 // 正确的状态常量定义
@@ -585,7 +585,7 @@ const FULFILLED = "fulfilled"; // 已完成状态
 const REJECTED = "rejected"; // 已拒绝状态
 ```
 
-### 2. Promise 构造函数实现 ✅
+### 2. Promise 构造函数实现 
 
 ```javascript
 class Promise {
@@ -604,21 +604,21 @@ class Promise {
     this.onFulfilledCallbacks = []; // 成功回调队列
     this.onRejectedCallbacks = []; // 失败回调队列
 
-    // resolve 函数实现 ✅
+    // resolve 函数实现 
     const resolve = (value) => {
       if (this.status === PENDING) {
         this.value = value;
-        this.status = FULFILLED; // ✅ 正确状态设置
+        this.status = FULFILLED; //  正确状态设置
         // 发布 - 执行所有成功回调
         this.onFulfilledCallbacks.forEach((fn) => fn());
       }
     };
 
-    // reject 函数实现 ✅
+    // reject 函数实现 
     const reject = (reason) => {
       if (this.status === PENDING) {
         this.reason = reason;
-        this.status = REJECTED; // ✅ 正确状态设置
+        this.status = REJECTED; //  正确状态设置
         // 发布 - 执行所有失败回调
         this.onRejectedCallbacks.forEach((fn) => fn());
       }
@@ -634,22 +634,22 @@ class Promise {
 }
 ```
 
-### 3. then 方法完整实现 ✅
+### 3. then 方法完整实现 
 
 ```javascript
 then(onFulfilled, onRejected) {
-    // 参数标准化 - 处理非函数参数 ✅
+    // 参数标准化 - 处理非函数参数 
     onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : value => value
     onRejected = typeof onRejected === 'function' ? onRejected : reason => { throw reason }
 
     // then 方法返回新的 Promise 实现链式调用
     const promise2 = new Promise((resolve, reject) => {
 
-        // 处理已完成状态 ✅
+        // 处理已完成状态 
         if (this.status === FULFILLED) {
             nextTick(() => {  // 使用微任务
                 try {
-                    const x = onFulfilled(this.value)  // ✅ 正确的回调和值
+                    const x = onFulfilled(this.value)  //  正确的回调和值
                     resolvePromise(promise2, x, resolve, reject)
                 } catch (error) {
                     reject(error)
@@ -657,11 +657,11 @@ then(onFulfilled, onRejected) {
             })
         }
 
-        // 处理已拒绝状态 ✅
+        // 处理已拒绝状态 
         if (this.status === REJECTED) {
             nextTick(() => {
                 try {
-                    const x = onRejected(this.reason)  // ✅ 正确的回调和值
+                    const x = onRejected(this.reason)  //  正确的回调和值
                     resolvePromise(promise2, x, resolve, reject)
                 } catch (error) {
                     reject(error)
@@ -675,7 +675,7 @@ then(onFulfilled, onRejected) {
             this.onFulfilledCallbacks.push(() => {
                 nextTick(() => {
                     try {
-                        const x = onFulfilled(this.value)  // ✅ 正确的回调
+                        const x = onFulfilled(this.value)  //  正确的回调
                         resolvePromise(promise2, x, resolve, reject)
                     } catch (error) {
                         reject(error)
@@ -687,7 +687,7 @@ then(onFulfilled, onRejected) {
             this.onRejectedCallbacks.push(() => {
                 nextTick(() => {
                     try {
-                        const x = onRejected(this.reason)  // ✅ 正确的回调
+                        const x = onRejected(this.reason)  //  正确的回调
                         resolvePromise(promise2, x, resolve, reject)
                     } catch (error) {
                         reject(error)
@@ -701,30 +701,30 @@ then(onFulfilled, onRejected) {
 }
 ```
 
-### 4. resolvePromise 核心算法 ✅
+### 4. resolvePromise 核心算法 
 
 这是 Promise/A+ 规范的核心实现：
 
 ```javascript
 const resolvePromise = (promise2, x, resolve, reject) => {
-  // 防止循环引用 ✅
+  // 防止循环引用 
   if (promise2 === x) {
     return reject(new TypeError("Chaining cycle detected for promise"));
   }
 
-  // 处理 Promise 实例 ✅
+  // 处理 Promise 实例 
   if (x instanceof Promise) {
     x.then(resolve, reject);
     return;
   }
 
-  // 处理 thenable 对象 ✅
+  // 处理 thenable 对象 
   if ((typeof x === "object" && x !== null) || typeof x === "function") {
     let called = false;
 
     try {
-      // 获取 then 方法 ✅
-      let then = x.then; // ✅ 正确：获取 then 属性，不是调用
+      // 获取 then 方法 
+      let then = x.then; //  正确：获取 then 属性，不是调用
 
       if (typeof then === "function") {
         // 调用 then 方法
@@ -733,7 +733,7 @@ const resolvePromise = (promise2, x, resolve, reject) => {
           (y) => {
             if (called) return;
             called = true;
-            // 递归解析，y 可能还是 Promise ✅
+            // 递归解析，y 可能还是 Promise 
             resolvePromise(promise2, y, resolve, reject);
           },
           (r) => {
@@ -752,21 +752,21 @@ const resolvePromise = (promise2, x, resolve, reject) => {
       reject(e);
     }
   } else {
-    // 普通值直接 resolve ✅
+    // 普通值直接 resolve 
     resolve(x);
   }
 };
 ```
 
-### 5. 辅助方法实现 ✅
+### 5. 辅助方法实现 
 
 ```javascript
-// catch 方法 - 语法糖 ✅
+// catch 方法 - 语法糖 
 catch(onRejected) {
     return this.then(null, onRejected)
 }
 
-// finally 方法 ✅
+// finally 方法 
 finally(onFinally) {
     return this.then(
         value => Promise.resolve(onFinally()).then(() => value),
@@ -774,7 +774,7 @@ finally(onFinally) {
     )
 }
 
-// 微任务队列模拟 ✅
+// 微任务队列模拟 
 const nextTick = (callback) => {
     if (typeof queueMicrotask !== 'undefined') {
         queueMicrotask(callback)  // 标准微任务API
@@ -857,13 +857,13 @@ p.catch((err) => {
 
 ---
 
-## ✅ 实现特性总结
+##  实现特性总结
 
 ### 已实现的核心功能
 
 我们的 Promise 实现已经包含了以下完整功能：
 
-#### 1. 完整的状态管理 ✅
+#### 1. 完整的状态管理 
 
 ```javascript
 // 正确的状态常量和转换
@@ -875,7 +875,7 @@ const REJECTED = "rejected";
 const resolve = (value) => {
   if (this.status === PENDING) {
     this.value = value;
-    this.status = FULFILLED; // ✅ 正确状态设置
+    this.status = FULFILLED; //  正确状态设置
     this.onFulfilledCallbacks.forEach((fn) => fn());
   }
 };
@@ -883,26 +883,26 @@ const resolve = (value) => {
 const reject = (reason) => {
   if (this.status === PENDING) {
     this.reason = reason;
-    this.status = REJECTED; // ✅ 正确状态设置
+    this.status = REJECTED; //  正确状态设置
     this.onRejectedCallbacks.forEach((fn) => fn());
   }
 };
 ```
 
-#### 2. 完善的 then 方法 ✅
+#### 2. 完善的 then 方法 
 
 ```javascript
 then(onFulfilled, onRejected) {
-    // ✅ 参数标准化处理
+    //  参数标准化处理
     onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : value => value
     onRejected = typeof onRejected === 'function' ? onRejected : reason => { throw reason }
 
     const promise2 = new Promise((resolve, reject) => {
-        // ✅ 正确的状态判断和回调执行
+        //  正确的状态判断和回调执行
         if (this.status === FULFILLED) {
             nextTick(() => {
                 try {
-                    const x = onFulfilled(this.value)  // ✅ 正确的回调和值
+                    const x = onFulfilled(this.value)  //  正确的回调和值
                     resolvePromise(promise2, x, resolve, reject)
                 } catch (error) {
                     reject(error)
@@ -916,27 +916,27 @@ then(onFulfilled, onRejected) {
 }
 ```
 
-#### 3. 完整的 Promise 解析算法 ✅
+#### 3. 完整的 Promise 解析算法 
 
 ```javascript
 const resolvePromise = (promise2, x, resolve, reject) => {
-  // ✅ 循环引用检测
+  //  循环引用检测
   if (promise2 === x) {
     return reject(new TypeError("Chaining cycle detected for promise"));
   }
 
-  // ✅ 正确的 thenable 处理
+  //  正确的 thenable 处理
   if ((typeof x === "object" && x !== null) || typeof x === "function") {
     let called = false;
     try {
-      let then = x.then; // ✅ 正确获取 then 属性
+      let then = x.then; //  正确获取 then 属性
       if (typeof then === "function") {
         then.call(
           x,
           (y) => {
             if (called) return;
             called = true;
-            resolvePromise(promise2, y, resolve, reject); // ✅ 递归解析
+            resolvePromise(promise2, y, resolve, reject); //  递归解析
           },
           (r) => {
             if (called) return;
@@ -958,22 +958,22 @@ const resolvePromise = (promise2, x, resolve, reject) => {
 };
 ```
 
-#### 4. 完整的静态方法集合 ✅
+#### 4. 完整的静态方法集合 
 
-- ✅ **Promise.resolve** - 创建已解决的 Promise
-- ✅ **Promise.reject** - 创建已拒绝的 Promise
-- ✅ **Promise.all** - 并行执行，全部成功才成功
-- ✅ **Promise.race** - 竞争执行，返回最先完成的
-- ✅ **Promise.allSettled** - 等待全部完成，返回详细状态
-- ✅ **Promise.any** - 任一成功即可，容灾处理
+-  **Promise.resolve** - 创建已解决的 Promise
+-  **Promise.reject** - 创建已拒绝的 Promise
+-  **Promise.all** - 并行执行，全部成功才成功
+-  **Promise.race** - 竞争执行，返回最先完成的
+-  **Promise.allSettled** - 等待全部完成，返回详细状态
+-  **Promise.any** - 任一成功即可，容灾处理
 
-#### 5. 高级特性 ✅
+#### 5. 高级特性 
 
-- ✅ **微任务队列模拟** - 使用 queueMicrotask 或降级方案
-- ✅ **错误处理和传播** - 完整的 catch 和 finally 方法
-- ✅ **参数校验** - 对所有输入进行类型检查
-- ✅ **值穿透** - 正确处理非函数参数
-- ✅ **内存管理** - 避免回调泄漏
+-  **微任务队列模拟** - 使用 queueMicrotask 或降级方案
+-  **错误处理和传播** - 完整的 catch 和 finally 方法
+-  **参数校验** - 对所有输入进行类型检查
+-  **值穿透** - 正确处理非函数参数
+-  **内存管理** - 避免回调泄漏
 
 ### 性能优化特性
 
@@ -1047,7 +1047,7 @@ function test1() {
   });
 
   p.then((value) => {
-    console.log("✅ 基本功能测试通过:", value);
+    console.log(" 基本功能测试通过:", value);
   });
 }
 
@@ -1057,14 +1057,14 @@ function test2() {
     .then((x) => x + 1)
     .then((x) => x + 1)
     .then((x) => {
-      console.log("✅ 链式调用测试通过:", x); // 应该输出 3
+      console.log(" 链式调用测试通过:", x); // 应该输出 3
     });
 }
 
 // 测试错误处理
 function test3() {
   Promise.reject("error").catch((err) => {
-    console.log("✅ 错误处理测试通过:", err);
+    console.log(" 错误处理测试通过:", err);
   });
 }
 ```
@@ -1077,12 +1077,12 @@ function test3() {
 
 **优点**：
 
-- ✅ 基本的状态管理机制
-- ✅ 异步操作处理（订阅发布模式）
-- ✅ then 方法链式调用
-- ✅ catch 方法实现
-- ✅ Promise 解析逻辑
-- ✅ 循环引用检测
+-  基本的状态管理机制
+-  异步操作处理（订阅发布模式）
+-  then 方法链式调用
+-  catch 方法实现
+-  Promise 解析逻辑
+-  循环引用检测
 
 **需要改进**：
 
@@ -1144,7 +1144,7 @@ class BadPromiseHandler {
   }
 }
 
-// ✅ 正确：及时清理回调
+//  正确：及时清理回调
 class GoodPromiseHandler {
   constructor() {
     this.callbacks = new Set();
@@ -1168,7 +1168,7 @@ class GoodPromiseHandler {
 ### 3. 错误处理最佳实践
 
 ```javascript
-// ✅ 推荐的错误处理模式
+//  推荐的错误处理模式
 async function robustAsyncOperation() {
   try {
     // 使用 Promise.allSettled 获取详细结果
@@ -1272,7 +1272,7 @@ class PromiseTestSuite {
     await this.testStaticMethods();
     await this.testEdgeCases();
 
-    console.log("✅ 所有测试通过！");
+    console.log(" 所有测试通过！");
   }
 
   static async testBasicFunctionality() {
