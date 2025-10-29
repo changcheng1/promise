@@ -52,7 +52,7 @@ promise/
 
 ## 🔧 实现原理
 
-### 状态机制
+### 1. Promise 状态机制
 
 Promise 基于状态机模式，具有三种互斥状态：
 
@@ -69,17 +69,507 @@ stateDiagram-v2
     note right of REJECTED: 失败状态，不可变
 ```
 
-### 异步处理机制
+**状态转换规则：**
 
-使用**订阅发布模式**处理异步操作：
+- **PENDING（待定）**: 初始状态，可以转换为 FULFILLED 或 REJECTED
+- **FULFILLED（已完成）**: 操作成功完成，状态不可变，有一个成功值
+- **REJECTED（已拒绝）**: 操作失败，状态不可变，有一个失败原因
+
+### 2. 异步处理机制 - 订阅发布模式
+
+Promise 使用**订阅发布模式**处理异步操作：
 
 ```javascript
 // 订阅阶段：收集回调函数
-this.onResolveCallBacks.push(callback);
+this.onFulfilledCallbacks.push(callback);
 
 // 发布阶段：执行所有回调
-this.onResolveCallBacks.forEach((fn) => fn());
+this.onFulfilledCallbacks.forEach((fn) => fn());
 ```
+
+**工作流程：**
+
+```mermaid
+sequenceDiagram
+    participant User as 用户代码
+    participant Promise as Promise实例
+    participant Callbacks as 回调队列
+    participant Executor as 执行器
+
+    User->>Promise: new Promise(executor)
+    Promise->>Executor: 立即执行executor
+    User->>Promise: .then(onFulfilled, onRejected)
+
+    alt 状态为PENDING
+        Promise->>Callbacks: 订阅回调到队列
+        Note over Callbacks: 等待异步操作完成
+        Executor->>Promise: resolve(value)
+        Promise->>Callbacks: 发布 - 执行所有回调
+    else 状态已确定
+        Promise->>User: 直接执行对应回调
+    end
+```
+
+### 3. 微任务队列机制
+
+Promise 回调需要在微任务队列中执行，确保正确的执行时机：
+
+```javascript
+const nextTick = (callback) => {
+  if (typeof queueMicrotask !== "undefined") {
+    queueMicrotask(callback); // 标准微任务API
+  } else if (typeof process !== "undefined" && process.nextTick) {
+    process.nextTick(callback); // Node.js环境
+  } else {
+    setTimeout(callback, 0); // 降级到宏任务
+  }
+};
+```
+
+### 4. Promise 解析算法
+
+`resolvePromise` 函数是 Promise/A+ 规范的核心，处理 then 方法的返回值：
+
+```mermaid
+flowchart TD
+    A[then方法返回值 x] --> B{x === promise2?}
+    B -->|是| C[抛出TypeError - 循环引用]
+    B -->|否| D{x是Promise实例?}
+    D -->|是| E[x.then(resolve, reject)]
+    D -->|否| F{x是对象或函数?}
+    F -->|否| G[resolve(x) - 普通值]
+    F -->|是| H{x.then是函数?}
+    H -->|否| G
+    H -->|是| I[调用x.then方法]
+    I --> J{调用成功?}
+    J -->|是| K[递归解析返回值]
+    J -->|否| L[reject错误]
+
+    style C fill:#ff6b6b
+    style G fill:#4ecdc4
+    style K fill:#45b7d1
+```
+
+### 5. 静态方法实现原理
+
+#### Promise.all 实现原理
+
+`Promise.all` 等待所有 Promise 完成，任一失败则整体失败：
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant All as Promise.all
+    participant P1 as Promise1
+    participant P2 as Promise2
+    participant P3 as Promise3
+    participant Result as 结果收集器
+
+    User->>All: Promise.all([p1, p2, p3])
+    All->>Result: 初始化结果数组
+
+    par 并行执行
+        All->>P1: 执行Promise1
+        All->>P2: 执行Promise2
+        All->>P3: 执行Promise3
+    end
+
+    P1->>Result: 成功 - 存储结果[0]
+    P2->>Result: 成功 - 存储结果[1]
+    P3->>Result: 成功 - 存储结果[2]
+
+    Result->>All: 所有Promise完成
+    All->>User: resolve([result1, result2, result3])
+
+    Note over All: 如果任一Promise失败，立即reject
+```
+
+**核心实现逻辑：**
+
+```javascript
+static all(promises) {
+    return new Promise((resolve, reject) => {
+        const results = []
+        let completedCount = 0
+
+        // 遍历所有Promise
+        promises.forEach((promise, index) => {
+            Promise.resolve(promise).then(
+                value => {
+                    results[index] = value  // 保持顺序
+                    completedCount++
+
+                    // 所有完成时resolve
+                    if (completedCount === promises.length) {
+                        resolve(results)
+                    }
+                },
+                reason => reject(reason)  // 任一失败立即reject
+            )
+        })
+    })
+}
+```
+
+#### Promise.race 实现原理
+
+`Promise.race` 返回最先完成的 Promise 结果：
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant Race as Promise.race
+    participant P1 as Promise1(慢)
+    participant P2 as Promise2(快)
+    participant P3 as Promise3(中)
+
+    User->>Race: Promise.race([p1, p2, p3])
+
+    par 并行竞争
+        Race->>P1: 执行Promise1
+        Race->>P2: 执行Promise2
+        Race->>P3: 执行Promise3
+    end
+
+    P2->>Race: 最先完成(成功/失败)
+    Race->>User: 立即返回P2的结果
+
+    Note over P1,P3: 其他Promise继续执行但结果被忽略
+```
+
+**核心实现逻辑：**
+
+```javascript
+static race(promises) {
+    return new Promise((resolve, reject) => {
+        // 遍历所有Promise
+        promises.forEach(promise => {
+            // 最先完成的Promise决定结果
+            Promise.resolve(promise).then(resolve, reject)
+        })
+    })
+}
+```
+
+### 6. 其他静态方法原理
+
+#### Promise.allSettled
+
+等待所有 Promise 完成，不管成功还是失败：
+
+```javascript
+static allSettled(promises) {
+    return new Promise(resolve => {
+        const results = []
+        let completedCount = 0
+
+        promises.forEach((promise, index) => {
+            Promise.resolve(promise).then(
+                value => {
+                    results[index] = { status: 'fulfilled', value }
+                    if (++completedCount === promises.length) resolve(results)
+                },
+                reason => {
+                    results[index] = { status: 'rejected', reason }
+                    if (++completedCount === promises.length) resolve(results)
+                }
+            )
+        })
+    })
+}
+```
+
+#### Promise.any
+
+返回第一个成功的 Promise，所有失败才失败：
+
+```javascript
+static any(promises) {
+    return new Promise((resolve, reject) => {
+        const errors = []
+        let rejectedCount = 0
+
+        promises.forEach((promise, index) => {
+            Promise.resolve(promise).then(
+                value => resolve(value),  // 第一个成功立即resolve
+                reason => {
+                    errors[index] = reason
+                    if (++rejectedCount === promises.length) {
+                        reject(new AggregateError(errors, 'All promises were rejected'))
+                    }
+                }
+            )
+        })
+    })
+}
+```
+
+---
+
+## 🔍 静态方法深度解析
+
+### Promise.all 详细实现
+
+**功能**: 并行执行多个 Promise，全部成功才成功，任一失败则失败
+
+**应用场景**:
+
+- 需要等待多个异步操作全部完成
+- 多个 API 请求并行执行
+- 批量文件读取操作
+
+```javascript
+static all(promises) {
+    return new Promise((resolve, reject) => {
+        // 参数验证
+        if (!Array.isArray(promises)) {
+            return reject(new TypeError('Promise.all accepts an array'))
+        }
+
+        // 空数组直接返回
+        if (promises.length === 0) {
+            return resolve([])
+        }
+
+        const results = []
+        let completedCount = 0
+
+        promises.forEach((promise, index) => {
+            // 确保每个元素都是Promise
+            Promise.resolve(promise).then(
+                value => {
+                    results[index] = value  // 保持原始顺序
+                    completedCount++
+
+                    // 所有Promise完成时resolve
+                    if (completedCount === promises.length) {
+                        resolve(results)
+                    }
+                },
+                reason => {
+                    reject(reason)  // 任一失败立即reject
+                }
+            )
+        })
+    })
+}
+```
+
+**使用示例**:
+
+```javascript
+// 并行请求多个API
+const fetchUserData = () => Promise.resolve({ name: "John", age: 30 });
+const fetchUserPosts = () => Promise.resolve(["post1", "post2"]);
+const fetchUserFriends = () => Promise.resolve(["friend1", "friend2"]);
+
+Promise.all([fetchUserData(), fetchUserPosts(), fetchUserFriends()])
+  .then(([userData, posts, friends]) => {
+    console.log("用户数据:", userData);
+    console.log("用户帖子:", posts);
+    console.log("用户朋友:", friends);
+  })
+  .catch((error) => {
+    console.log("某个请求失败:", error);
+  });
+```
+
+### Promise.race 详细实现
+
+**功能**: 返回最先完成（成功或失败）的 Promise 结果
+
+**应用场景**:
+
+- 请求超时控制
+- 多个数据源竞争
+- 快速失败机制
+
+```javascript
+static race(promises) {
+    return new Promise((resolve, reject) => {
+        // 参数验证
+        if (!Array.isArray(promises)) {
+            return reject(new TypeError('Promise.race accepts an array'))
+        }
+
+        // 遍历所有Promise，最先完成的决定结果
+        promises.forEach(promise => {
+            Promise.resolve(promise).then(resolve, reject)
+        })
+    })
+}
+```
+
+**使用示例**:
+
+```javascript
+// 请求超时控制
+const fetchData = () => {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve("数据获取成功"), 2000);
+  });
+};
+
+const timeout = (ms) => {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error("请求超时")), ms);
+  });
+};
+
+Promise.race([
+  fetchData(),
+  timeout(1000), // 1秒超时
+])
+  .then((result) => {
+    console.log("结果:", result);
+  })
+  .catch((error) => {
+    console.log("错误:", error.message); // 输出: 请求超时
+  });
+```
+
+### Promise.allSettled 详细实现
+
+**功能**: 等待所有 Promise 完成，返回每个 Promise 的状态和结果
+
+**应用场景**:
+
+- 需要知道每个操作的具体结果
+- 批量操作的详细报告
+- 容错处理
+
+```javascript
+static allSettled(promises) {
+    return new Promise(resolve => {
+        if (!Array.isArray(promises)) {
+            return resolve([])
+        }
+
+        if (promises.length === 0) {
+            return resolve([])
+        }
+
+        const results = []
+        let completedCount = 0
+
+        promises.forEach((promise, index) => {
+            Promise.resolve(promise).then(
+                value => {
+                    results[index] = { status: 'fulfilled', value }
+                    completedCount++
+
+                    if (completedCount === promises.length) {
+                        resolve(results)
+                    }
+                },
+                reason => {
+                    results[index] = { status: 'rejected', reason }
+                    completedCount++
+
+                    if (completedCount === promises.length) {
+                        resolve(results)
+                    }
+                }
+            )
+        })
+    })
+}
+```
+
+**使用示例**:
+
+```javascript
+// 批量文件处理
+const processFiles = [
+  Promise.resolve("file1.txt 处理成功"),
+  Promise.reject("file2.txt 处理失败"),
+  Promise.resolve("file3.txt 处理成功"),
+];
+
+Promise.allSettled(processFiles).then((results) => {
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      console.log(`文件${index + 1}: ${result.value}`);
+    } else {
+      console.log(`文件${index + 1}: ${result.reason}`);
+    }
+  });
+});
+// 输出:
+// 文件1: file1.txt 处理成功
+// 文件2: file2.txt 处理失败
+// 文件3: file3.txt 处理成功
+```
+
+### Promise.any 详细实现
+
+**功能**: 返回第一个成功的 Promise，所有失败才失败
+
+**应用场景**:
+
+- 多个备用数据源
+- 快速成功机制
+- 容灾处理
+
+```javascript
+static any(promises) {
+    return new Promise((resolve, reject) => {
+        if (!Array.isArray(promises)) {
+            return reject(new TypeError('Promise.any accepts an array'))
+        }
+
+        if (promises.length === 0) {
+            return reject(new AggregateError([], 'All promises were rejected'))
+        }
+
+        const errors = []
+        let rejectedCount = 0
+
+        promises.forEach((promise, index) => {
+            Promise.resolve(promise).then(
+                value => {
+                    resolve(value)  // 第一个成功立即resolve
+                },
+                reason => {
+                    errors[index] = reason
+                    rejectedCount++
+
+                    // 所有都失败才reject
+                    if (rejectedCount === promises.length) {
+                        reject(new AggregateError(errors, 'All promises were rejected'))
+                    }
+                }
+            )
+        })
+    })
+}
+```
+
+**使用示例**:
+
+```javascript
+// 多个数据源竞争
+const fetchFromCDN1 = () => Promise.reject("CDN1 不可用");
+const fetchFromCDN2 = () => Promise.resolve("CDN2 数据");
+const fetchFromCDN3 = () => Promise.reject("CDN3 不可用");
+
+Promise.any([fetchFromCDN1(), fetchFromCDN2(), fetchFromCDN3()])
+  .then((data) => {
+    console.log("获取到数据:", data); // 输出: CDN2 数据
+  })
+  .catch((error) => {
+    console.log("所有数据源都失败了:", error);
+  });
+```
+
+### 静态方法对比表
+
+| 方法                   | 成功条件 | 失败条件 | 返回值       | 使用场景               |
+| ---------------------- | -------- | -------- | ------------ | ---------------------- |
+| **Promise.all**        | 全部成功 | 任一失败 | 成功值数组   | 并行执行，需要全部结果 |
+| **Promise.race**       | 最先完成 | 最先失败 | 第一个结果   | 超时控制，竞争机制     |
+| **Promise.allSettled** | 全部完成 | 不会失败 | 状态结果数组 | 批量处理，需要详细报告 |
+| **Promise.any**        | 任一成功 | 全部失败 | 第一个成功值 | 容灾处理，快速成功     |
 
 ---
 
@@ -590,8 +1080,283 @@ function test3() {
 
 ---
 
+## ⚡ 性能优化与最佳实践
+
+### 1. 静态方法性能对比
+
+```javascript
+// 性能测试示例
+const createPromises = (count, delay = 100) => {
+  return Array.from(
+    { length: count },
+    (_, i) =>
+      new Promise((resolve) =>
+        setTimeout(() => resolve(`结果${i}`), Math.random() * delay)
+      )
+  );
+};
+
+// 测试不同方法的执行时间
+async function performanceTest() {
+  const promises = createPromises(10);
+
+  console.time("Promise.all");
+  await Promise.all(promises);
+  console.timeEnd("Promise.all"); // ~100ms (并行执行)
+
+  console.time("Promise.race");
+  await Promise.race(createPromises(10));
+  console.timeEnd("Promise.race"); // ~10-50ms (最快的)
+
+  console.time("Promise.allSettled");
+  await Promise.allSettled(createPromises(10));
+  console.timeEnd("Promise.allSettled"); // ~100ms (等待全部)
+}
+```
+
+### 2. 内存优化技巧
+
+```javascript
+// ❌ 错误：可能导致内存泄漏
+class BadPromiseHandler {
+  constructor() {
+    this.callbacks = [];
+  }
+
+  addCallback(callback) {
+    this.callbacks.push(callback); // 没有清理机制
+  }
+}
+
+// ✅ 正确：及时清理回调
+class GoodPromiseHandler {
+  constructor() {
+    this.callbacks = new Set();
+  }
+
+  addCallback(callback) {
+    this.callbacks.add(callback);
+
+    // 返回清理函数
+    return () => {
+      this.callbacks.delete(callback);
+    };
+  }
+
+  clear() {
+    this.callbacks.clear();
+  }
+}
+```
+
+### 3. 错误处理最佳实践
+
+```javascript
+// ✅ 推荐的错误处理模式
+async function robustAsyncOperation() {
+  try {
+    // 使用 Promise.allSettled 获取详细结果
+    const results = await Promise.allSettled([
+      fetchUserData(),
+      fetchUserPosts(),
+      fetchUserSettings(),
+    ]);
+
+    // 分别处理成功和失败的结果
+    const [userData, posts, settings] = results;
+
+    if (userData.status === "rejected") {
+      console.warn("用户数据获取失败:", userData.reason);
+      // 使用默认值或重试
+    }
+
+    if (posts.status === "fulfilled") {
+      console.log("帖子数据:", posts.value);
+    }
+
+    return {
+      userData: userData.status === "fulfilled" ? userData.value : null,
+      posts: posts.status === "fulfilled" ? posts.value : [],
+      settings: settings.status === "fulfilled" ? settings.value : {},
+    };
+  } catch (error) {
+    console.error("意外错误:", error);
+    throw error;
+  }
+}
+```
+
+### 4. 并发控制
+
+```javascript
+// 控制并发数量，避免过多请求
+class PromisePool {
+  constructor(concurrency = 3) {
+    this.concurrency = concurrency;
+    this.running = 0;
+    this.queue = [];
+  }
+
+  async add(promiseFactory) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        promiseFactory,
+        resolve,
+        reject,
+      });
+
+      this.process();
+    });
+  }
+
+  async process() {
+    if (this.running >= this.concurrency || this.queue.length === 0) {
+      return;
+    }
+
+    this.running++;
+    const { promiseFactory, resolve, reject } = this.queue.shift();
+
+    try {
+      const result = await promiseFactory();
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    } finally {
+      this.running--;
+      this.process();
+    }
+  }
+}
+
+// 使用示例
+const pool = new PromisePool(3); // 最多3个并发
+
+const urls = ["url1", "url2", "url3", "url4", "url5"];
+const requests = urls.map((url) => pool.add(() => fetch(url)));
+
+Promise.all(requests).then((responses) => {
+  console.log("所有请求完成");
+});
+```
+
+---
+
+## 🧪 完整测试套件
+
+```javascript
+// 完整的Promise测试套件
+class PromiseTestSuite {
+  static async runAllTests() {
+    console.log("🚀 开始Promise测试套件...\n");
+
+    await this.testBasicFunctionality();
+    await this.testChaining();
+    await this.testErrorHandling();
+    await this.testStaticMethods();
+    await this.testEdgeCases();
+
+    console.log("✅ 所有测试通过！");
+  }
+
+  static async testBasicFunctionality() {
+    console.log("📋 测试基本功能");
+
+    // 测试同步resolve
+    const p1 = Promise.resolve("success");
+    const result1 = await p1;
+    console.assert(result1 === "success", "同步resolve测试失败");
+
+    // 测试异步resolve
+    const p2 = new Promise((resolve) => {
+      setTimeout(() => resolve("async success"), 10);
+    });
+    const result2 = await p2;
+    console.assert(result2 === "async success", "异步resolve测试失败");
+
+    console.log("  ✓ 基本功能测试通过");
+  }
+
+  static async testChaining() {
+    console.log("📋 测试链式调用");
+
+    const result = await Promise.resolve(1)
+      .then((x) => x + 1)
+      .then((x) => x * 2)
+      .then((x) => x.toString());
+
+    console.assert(result === "4", "链式调用测试失败");
+    console.log("  ✓ 链式调用测试通过");
+  }
+
+  static async testErrorHandling() {
+    console.log("📋 测试错误处理");
+
+    try {
+      await Promise.reject("test error");
+      console.assert(false, "应该抛出错误");
+    } catch (error) {
+      console.assert(error === "test error", "错误处理测试失败");
+    }
+
+    console.log("  ✓ 错误处理测试通过");
+  }
+
+  static async testStaticMethods() {
+    console.log("📋 测试静态方法");
+
+    // 测试Promise.all
+    const allResult = await Promise.all([
+      Promise.resolve(1),
+      Promise.resolve(2),
+      Promise.resolve(3),
+    ]);
+    console.assert(
+      JSON.stringify(allResult) === JSON.stringify([1, 2, 3]),
+      "Promise.all测试失败"
+    );
+
+    // 测试Promise.race
+    const raceResult = await Promise.race([
+      new Promise((resolve) => setTimeout(() => resolve("slow"), 100)),
+      Promise.resolve("fast"),
+    ]);
+    console.assert(raceResult === "fast", "Promise.race测试失败");
+
+    console.log("  ✓ 静态方法测试通过");
+  }
+
+  static async testEdgeCases() {
+    console.log("📋 测试边界情况");
+
+    // 测试值穿透
+    const result = await Promise.resolve("value")
+      .then() // 没有传递函数
+      .then((x) => x);
+
+    console.assert(result === "value", "值穿透测试失败");
+
+    // 测试空数组
+    const emptyAll = await Promise.all([]);
+    console.assert(
+      Array.isArray(emptyAll) && emptyAll.length === 0,
+      "空数组测试失败"
+    );
+
+    console.log("  ✓ 边界情况测试通过");
+  }
+}
+
+// 运行测试
+// PromiseTestSuite.runAllTests()
+```
+
+---
+
 ## 📚 参考资料
 
 - [Promise/A+ 规范](https://promisesaplus.com/)
 - [MDN Promise 文档](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Promise)
 - [JavaScript 异步编程指南](https://javascript.info/async)
+- [ECMAScript Promise 规范](https://tc39.es/ecma262/#sec-promise-objects)
+- [Node.js Promise 最佳实践](https://nodejs.org/en/docs/guides/dont-block-the-event-loop/)
